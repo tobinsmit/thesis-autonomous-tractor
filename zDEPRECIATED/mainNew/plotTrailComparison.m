@@ -1,0 +1,135 @@
+
+% path = load("paths/path14offset2m.mat").path;
+% d1 = load("backupTrailsAllNormalOffset.mat").trailsNormalOffset;
+% trail1 = d1{3};
+% d2 = load("backupTrailsAllControlOffset.mat").trailsControlOffset;
+% trail2 = d2{3};
+% tit = "MPC with Control Bias";
+
+% path = load("paths/path14offset2m.mat").path;
+% trail1 = load("backupTrailSmcNormalOffset.mat").trail;
+% trail2 = load("backupTrailSmcControlOffset.mat").trail;
+% tit = "SMC with Control Bias";
+
+% path = load("paths/path14offset2m.mat").path;
+% c = 3;
+% trail1 = load("backupTrailsAllNormalOffset.mat").trailsNormalOffset{c};
+% trail2 = load("backupTrailsAllParamOffset.mat").trails{c};
+% tit = "MPC with Parametric Error";
+
+config.L_t = 2;
+config.L_h = 0.75;
+config.L_i = 1;
+
+figure, clf, hold on, axis equal
+title(tit)
+
+xminmax = minmax(path(:,1)');
+yminmax = minmax(path(:,2)');
+xRange = diff(xminmax);
+yRange = diff(yminmax);
+defaultMatlabAspectRatio = 1.267893660531697;
+if xRange > yRange * defaultMatlabAspectRatio
+    xlim(xminmax + [-2 2])
+else
+    ylim(yminmax + [-2 2])
+end
+
+rateOfPathDots = ceil(0.3/getAveragePointSpace(path));
+plot(path(1:rateOfPathDots:end,1),path(1:rateOfPathDots:end,2),'.k')
+
+plot(trail2.xr,trail2.yr,'b')
+plot(trail1.xr,trail1.yr,'--b')
+plot(trail2.xi,trail2.yi,'r')
+plot(trail1.xi,trail1.yi,'--r')
+
+relIdxs = input("Enter sketched vehicles positions (from 0-1):");
+idxs = round(relIdxs*(height(trail2)-1))+1;
+for idx = idxs
+    sketchVehicle(trail2(idx,:),config)
+end
+
+legend("Set path","Tractor result with bias","Tractor result without bias","Implement result with bias","Implement result without bias")
+
+function sketchVehicle(frame, config)
+    L_t = config.L_t;
+    L_h = config.L_h;
+    L_i = config.L_i;
+    xr = frame.xr;
+    yr = frame.yr;
+    theta_t = frame.theta_t;
+    phi = frame.phi;    
+    delta_t = frame.delta_t;
+    delta_i = frame.delta_i;
+    xi = frame.xi;
+    yi = frame.yi;
+    xh = frame.xh;
+    yh = frame.yh;
+    xf = xr + config.L_t * cos(theta_t);
+    yf = yr + config.L_t * sin(theta_t);
+
+    % Tractor Rear wheel
+    trWheel = rectFromHeightLength(0.2, 0.9);
+    trWheel = rotatePointsOrigin(trWheel, theta_t);
+    trWheel = translatePoints(trWheel, [xr yr]');
+
+    % Tractor Front wheel
+    tfWheel = rectFromHeightLength(0.2, 0.9);
+    tfWheel = rotatePointsOrigin(tfWheel, delta_t);
+    tfWheel = translatePoints(tfWheel, [L_t 0]');
+    tfWheel = rotatePointsOrigin(tfWheel, theta_t);
+    tfWheel = translatePoints(tfWheel, [xr yr]');
+
+    % Hitch Point
+    hitchPointCenter = [-L_h, 0]';
+    hitchPointCenter = rotatePointsOrigin(hitchPointCenter, theta_t);
+    hitchPointCenter = translatePoints(hitchPointCenter, [xr yr]');
+    angles = linspace(0,2*pi,60);
+    hitchPointPoints = hitchPointCenter + 0.1*[cos(angles); sin(angles)];
+
+    % Implement wheel
+    theta_i = theta_t + phi;
+    iWheel = rectFromHeightLength(0.2, 0.9);
+    iWheel = rotatePointsOrigin(iWheel, delta_i);
+    iWheel = translatePoints(iWheel, [-L_i,0]');
+    iWheel = rotatePointsOrigin(iWheel, theta_i);
+    iWheel = translatePoints(iWheel, [xh;yh]);
+    
+    plot([xi xh xr xf],[yi yh yr yf],'k')
+    patch(trWheel(1,:),trWheel(2,:),'w', 'HandleVisibility','off');
+    patch(tfWheel(1,:),tfWheel(2,:),'w', 'HandleVisibility','off');
+    patch(hitchPointPoints(1,:),hitchPointPoints(2,:),'w', 'HandleVisibility','off');
+    patch(iWheel(1,:),iWheel(2,:),'w', 'HandleVisibility','off');
+
+%     plot([xi xh xr xf],[yi yh yr yf],'k')
+%     plot(trWheel(1,:),trWheel(2,:),'k');
+%     plot(tfWheel(1,:),tfWheel(2,:),'k');
+%     plot(hitchPointPoints(1,:),hitchPointPoints(2,:),'k');
+%     plot(iWheel(1,:),iWheel(2,:),'k');
+end
+
+function p = rectFromHeightLength(h,l)
+    p = [
+        -l/2 -h/2
+        -l/2 h/2
+        l/2 h/2
+        l/2 -h/2
+        -l/2 -h/2]';
+end
+
+function v = rotatePointsOrigin(v, theta)
+    R = [cos(theta) -sin(theta); sin(theta) cos(theta)];
+    v = R*v;
+end
+
+function v = translatePoints(v, d)
+    v = v + d;
+end
+
+function d = getAveragePointSpace(path)
+    dx = mean(abs(diff(path(:,1))));
+    dy = mean(abs(diff(path(:,2))));
+    d = sqrt(dx^2+dy^2);
+end
+
+
